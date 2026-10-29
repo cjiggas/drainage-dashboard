@@ -1,0 +1,15 @@
+# Render Blueprint - lets Render set up the web service from this repo automatically.
+services:
+  - type: web
+    name: drainage-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false   # Render asks you for this value
+      - key: DEVICE_KEY
+        sync: false   # Render asks you for this value
+      - key: AI_INTERVAL_SECONDS
+        value: "30"
