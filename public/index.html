@@ -5,113 +5,239 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Drainage Monitor</title>
 <style>
+  :root {
+    --bg: #0b1220; --card: #131c2e; --card2: #1a2540; --line: #243152;
+    --text: #e8eefc; --muted: #8a9bbf;
+    --green: #22c55e; --yellow: #f59e0b; --red: #ef4444; --blue: #38bdf8; --gray: #64748b;
+    --accent: var(--gray);
+  }
   * { box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 16px; }
-  header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-  h1 { font-size: 24px; margin: 0; }
-  h3 { margin: 0 0 12px; font-size: 16px; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
-  .pill { padding: 6px 12px; border-radius: 999px; font-weight: bold; font-size: 14px; }
-  .online { background: #166534; } .offline { background: #7f1d1d; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-  .card { background: #1e293b; border-radius: 12px; padding: 16px; }
-  .wide { grid-column: 1 / -1; }
-  .cam-box { position: relative; background: #000; border-radius: 8px; aspect-ratio: 4 / 3; overflow: hidden; }
-  .cam-box img { width: 100%; height: 100%; object-fit: contain; display: none; }
-  .cam-box .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #64748b; }
-  .small { font-size: 13px; color: #94a3b8; margin-top: 8px; }
-  .badge { font-size: 40px; font-weight: bold; text-align: center; padding: 20px; border-radius: 10px; margin-bottom: 12px; }
-  .CLEAR { background: #16a34a; } .BLOCKED { background: #dc2626; }
-  .UNKNOWN { background: #475569; } .CHECKING { background: #ca8a04; }
-  .row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #334155; }
-  .row b { text-align: right; }
-  .error { color: #fca5a5; font-size: 14px; margin-top: 8px; min-height: 18px; }
-  button { width: 100%; padding: 14px; font-size: 16px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; margin-top: 12px; cursor: pointer; }
-  button:disabled { background: #334155; cursor: not-allowed; }
-  .thumb { width: 100%; border-radius: 8px; margin-top: 12px; display: none; }
-  .bar { position: relative; height: 22px; background: #334155; border-radius: 11px; overflow: hidden; margin: 10px 0 4px; }
-  #fill { height: 100%; width: 0; background: #38bdf8; transition: width .5s; }
-  .marker { position: absolute; top: 0; bottom: 0; width: 3px; }
-  #warnMark { background: #facc15; } #dangerMark { background: #f87171; }
-  .legend { font-size: 12px; color: #94a3b8; display: flex; gap: 14px; }
-  .st-NORMAL { color: #4ade80; } .st-WARNING { color: #facc15; } .st-DANGER { color: #f87171; }
-  .st-SENSOR_ERROR, .st-UNKNOWN { color: #94a3b8; }
-  .ai-CLEAR { color: #4ade80; } .ai-BLOCKED { color: #f87171; } .ai-UNKNOWN { color: #94a3b8; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 20% -10%, #17315e 0%, transparent 60%), var(--bg);
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; }
+
+  /* top bar */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #0ea5e9, #2563eb); display: grid; place-items: center; box-shadow: 0 6px 20px #0ea5e955; }
+  .logo svg { width: 26px; height: 26px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
+  .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .pill { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 14px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+  .pill.on .dot { background: var(--green); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 #22c55e99; } 70% { box-shadow: 0 0 0 9px #22c55e00; } 100% { box-shadow: 0 0 0 0 #22c55e00; } }
+
+  /* hero status */
+  .hero {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 22px 24px; border-radius: 18px; margin-bottom: 18px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, var(--card)), var(--card));
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+    transition: background .4s, border-color .4s;
+  }
+  .hero .icon { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; font-size: 34px; background: color-mix(in srgb, var(--accent) 25%, #0000); }
+  .hero h2 { margin: 0; font-size: 30px; letter-spacing: .5px; }
+  .hero p { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
+  .hero .grow { flex: 1; min-width: 220px; }
+  .hero .meta { text-align: right; color: var(--muted); font-size: 13px; }
+  .hero .meta b { display: block; font-size: 26px; color: var(--text); }
+
+  /* grid + cards */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  .c-cam { grid-column: span 7; } .c-ai { grid-column: span 5; }
+  .c-water { grid-column: span 5; } .c-sens { grid-column: span 7; } .c-hist { grid-column: span 12; }
+  @media (max-width: 900px) { .c-cam, .c-ai, .c-water, .c-sens { grid-column: span 12; } .hero .meta { text-align: left; } }
+  .card h3 { margin: 0 0 14px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.2px; display: flex; align-items: center; gap: 8px; }
+
+  /* camera */
+  .cam { position: relative; background: #000; border-radius: 12px; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--line); }
+  .cam img { width: 100%; height: 100%; object-fit: cover; display: none; }
+  .cam .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: var(--muted); }
+  .cam .tag { position: absolute; top: 12px; left: 12px; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 13px; background: #000a; backdrop-filter: blur(4px); display: none; }
+  .cam .live { position: absolute; top: 12px; right: 12px; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #000a; display: none; }
+  .cam .live i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red); margin-right: 6px; animation: pulse 1.8s infinite; }
+  .small { font-size: 13px; color: var(--muted); margin-top: 10px; }
+
+  /* AI verdict */
+  .verdict { text-align: center; padding: 22px 12px; border-radius: 14px; font-size: 38px; font-weight: 800; letter-spacing: 1px; margin-bottom: 14px; transition: background .3s; }
+  .v-CLEAR { background: linear-gradient(135deg, #15803d, #22c55e); }
+  .v-BLOCKED { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+  .v-UNKNOWN { background: var(--card2); color: var(--muted); font-size: 28px; }
+  .v-CHECKING { background: linear-gradient(135deg, #b45309, #f59e0b); font-size: 28px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; margin-bottom: 6px; }
+  .chip { background: var(--card2); border: 1px solid var(--line); padding: 5px 11px; border-radius: 999px; font-size: 13px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: 0; }
+  .row span { color: var(--muted); } .row b { text-align: right; }
+  .error { color: #fca5a5; font-size: 13px; margin-top: 8px; min-height: 16px; }
+  button { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; border: 0; border-radius: 12px; background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff; margin-top: 10px; cursor: pointer; transition: transform .1s, filter .2s; }
+  button:hover { filter: brightness(1.1); } button:active { transform: scale(.98); }
+  button:disabled { background: var(--card2); color: var(--muted); cursor: not-allowed; filter: none; }
+  .thumb-wrap { display: none; margin-top: 14px; }
+  .thumb { width: 100%; border-radius: 10px; border: 1px solid var(--line); display: block; }
+
+  /* water tank */
+  .tank-wrap { display: flex; gap: 22px; align-items: center; }
+  .tank { position: relative; width: 120px; height: 230px; border: 3px solid #3b4f7d; border-top: 0; border-radius: 0 0 22px 22px; background: #0e1627; overflow: hidden; flex: none; }
+  .water { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(180deg, #38bdf8, #0369a1); transition: height .8s ease; }
+  .water::before { content: ""; position: absolute; top: -7px; left: -10%; width: 120%; height: 14px; background: #7dd3fc; border-radius: 50%; opacity: .55; animation: wave 3s ease-in-out infinite; }
+  @keyframes wave { 0%,100% { transform: translateX(-4%); } 50% { transform: translateX(4%); } }
+  .mark { position: absolute; left: 0; right: 0; border-top: 2px dashed; }
+  .mark em { position: absolute; right: 4px; top: -17px; font-size: 10px; font-style: normal; font-weight: 700; }
+  #warnMark { border-color: var(--yellow); color: var(--yellow); } #dangerMark { border-color: var(--red); color: var(--red); }
+  .big { font-size: 46px; font-weight: 800; line-height: 1; }
+  .big small { font-size: 18px; color: var(--muted); font-weight: 600; }
+  .tank-info p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+  /* sensor tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .tile .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .tile .v { font-size: 22px; font-weight: 700; margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+  .led { width: 14px; height: 14px; border-radius: 50%; background: #334155; flex: none; }
+  .led.on { background: var(--red); box-shadow: 0 0 12px var(--red); }
+  .led.blink { background: var(--yellow); box-shadow: 0 0 12px var(--yellow); animation: blink 1s steps(2) infinite; }
+  .led.fast { animation-duration: .4s; }
+  @keyframes blink { 50% { opacity: .15; } }
+  .good { color: var(--green); } .warn { color: var(--yellow); } .bad { color: var(--red); } .dim { color: var(--muted); }
+
+  /* history */
+  .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
-  th { color: #94a3b8; font-weight: normal; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .b-NORMAL, .b-CLEAR { background: #22c55e22; color: var(--green); }
+  .b-WARNING { background: #f59e0b22; color: var(--yellow); }
+  .b-DANGER, .b-BLOCKED { background: #ef444422; color: var(--red); }
+  .b-SENSOR_ERROR, .b-UNKNOWN { background: #64748b33; color: var(--muted); }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 24px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Drainage Monitor</h1>
-  <span id="devicePill" class="pill offline">Device offline</span>
-</header>
+<div class="page">
 
-<div class="grid">
-  <!-- Camera -->
-  <div class="card">
-    <h3>Camera</h3>
-    <div class="cam-box">
-      <img id="cam" alt="Latest camera photo">
-      <div id="camEmpty" class="empty">Waiting for the first photo from the ESP32...</div>
+  <div class="top">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>
+      </div>
+      <div>
+        <h1>Drainage Monitor</h1>
+        <div class="sub">Smart drain watch · ESP32-S3 + AI camera</div>
+      </div>
     </div>
-    <div id="camInfo" class="small">-</div>
+    <div id="devicePill" class="pill"><span class="dot"></span><span id="deviceText">Connecting...</span></div>
   </div>
 
-  <!-- AI detection -->
-  <div class="card">
-    <h3>AI Detection</h3>
-    <div id="badge" class="badge UNKNOWN">WAITING</div>
-    <div class="row"><span>Objects detected</span><b id="objects">-</b></div>
-    <div class="row"><span>Last check</span><b id="lastCheck">-</b></div>
-    <div class="row"><span>AI response time</span><b id="aiMs">-</b></div>
-    <div id="aiError" class="error"></div>
-    <button id="checkBtn" onclick="checkNow()">Check drain now</button>
-    <img id="aiThumb" class="thumb" alt="Photo analyzed by the AI">
-    <div id="aiThumbLabel" class="small" style="display:none">Photo the AI analyzed</div>
-  </div>
-
-  <!-- Sensors -->
-  <div class="card">
-    <h3>Sensor Readings</h3>
-    <div class="row"><span>Water level</span><b id="water">-</b></div>
-    <div class="bar">
-      <div id="fill"></div>
-      <div id="warnMark" class="marker"></div>
-      <div id="dangerMark" class="marker"></div>
+  <!-- overall status -->
+  <div id="hero" class="hero">
+    <div id="heroIcon" class="icon">⏳</div>
+    <div class="grow">
+      <h2 id="heroTitle">Waiting for device</h2>
+      <p id="heroMsg">Power on the ESP32 and it will appear here.</p>
     </div>
-    <div class="legend"><span>Yellow line: warning level</span><span>Red line: danger level</span></div>
-    <div class="row"><span>Distance to water (HC-SR04)</span><b id="distance">-</b></div>
-    <div class="row"><span>Ultrasonic sensor</span><b id="sensorOk">-</b></div>
-    <div class="row"><span>Alarm state</span><b id="state">-</b></div>
-    <div class="row"><span>LED</span><b id="led">-</b></div>
-    <div class="row"><span>Buzzer</span><b id="buzzer">-</b></div>
-    <div class="row"><span>Last update from device</span><b id="lastSeen">-</b></div>
+    <div class="meta">Water level<b id="heroWater">-</b></div>
   </div>
 
-  <!-- History -->
-  <div class="card wide">
-    <h3>Recent Readings</h3>
-    <table>
-      <thead><tr><th>Time</th><th>Water level</th><th>Distance</th><th>Alarm state</th><th>AI result</th></tr></thead>
-      <tbody id="historyBody"><tr><td colspan="5">No readings yet</td></tr></tbody>
-    </table>
+  <div class="grid">
+
+    <!-- camera -->
+    <div class="card c-cam">
+      <h3>📷 Camera</h3>
+      <div class="cam">
+        <img id="cam" alt="Latest camera photo">
+        <div id="camEmpty" class="empty">Waiting for the first photo from the ESP32...</div>
+        <div id="camTag" class="tag"></div>
+        <div id="camLive" class="live"><i></i>LIVE</div>
+      </div>
+      <div id="camInfo" class="small">-</div>
+    </div>
+
+    <!-- AI -->
+    <div class="card c-ai">
+      <h3>🤖 AI Drain Check</h3>
+      <div id="verdict" class="verdict v-UNKNOWN">WAITING</div>
+      <div id="chips" class="chips"></div>
+      <div class="row"><span>Last check</span><b id="lastCheck">-</b></div>
+      <div class="row"><span>Response time</span><b id="aiMs">-</b></div>
+      <div id="aiError" class="error"></div>
+      <button id="checkBtn" onclick="checkNow()">Check drain now</button>
+      <div id="thumbWrap" class="thumb-wrap">
+        <img id="aiThumb" class="thumb" alt="Photo analyzed by the AI">
+        <div class="small">Photo the AI analyzed</div>
+      </div>
+    </div>
+
+    <!-- water -->
+    <div class="card c-water">
+      <h3>🌊 Water Level</h3>
+      <div class="tank-wrap">
+        <div class="tank">
+          <div id="water" class="water"></div>
+          <div id="warnMark" class="mark" style="bottom:-10%"><em>WARN</em></div>
+          <div id="dangerMark" class="mark" style="bottom:-10%"><em>DANGER</em></div>
+        </div>
+        <div class="tank-info">
+          <div class="big"><span id="waterNum">-</span><small> cm</small></div>
+          <p id="waterPct">-</p>
+          <p id="waterLimits">-</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- sensors -->
+    <div class="card c-sens">
+      <h3>📡 Live Sensors</h3>
+      <div class="tiles">
+        <div class="tile"><div class="k">Distance to water</div><div class="v" id="distance">-</div></div>
+        <div class="tile"><div class="k">Ultrasonic sensor</div><div class="v" id="sensorOk">-</div></div>
+        <div class="tile"><div class="k">Alarm state</div><div class="v" id="state">-</div></div>
+        <div class="tile"><div class="k">Last data</div><div class="v" id="lastSeen">-</div></div>
+        <div class="tile"><div class="k">LED</div><div class="v"><span id="ledDot" class="led"></span><span id="ledText">-</span></div></div>
+        <div class="tile"><div class="k">Buzzer</div><div class="v"><span id="buzDot" class="led"></span><span id="buzText">-</span></div></div>
+      </div>
+    </div>
+
+    <!-- history -->
+    <div class="card c-hist">
+      <h3>🕒 Recent Readings</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Time</th><th>Water level</th><th>Distance</th><th>Alarm state</th><th>AI result</th></tr></thead>
+          <tbody id="historyBody"><tr><td colspan="5" class="dim">No readings yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
+
+  <footer>Updates every second · ESP32-S3 · HC-SR04 · Claude vision</footer>
 </div>
 
 <script>
   const $ = (id) => document.getElementById(id);
-  const OUTPUTS = {
-    NORMAL:       { led: "Off",            buzzer: "Off" },
-    WARNING:      { led: "Blinking slowly", buzzer: "Off" },
-    DANGER:       { led: "On",             buzzer: "Beeping" },
-    SENSOR_ERROR: { led: "Blinking fast",  buzzer: "Off" },
+  const HERO = {
+    NORMAL:       { color: "var(--green)",  icon: "✅", title: "All clear",        msg: "Water level is normal and the drain is flowing." },
+    WARNING:      { color: "var(--yellow)", icon: "⚠️", title: "Warning",          msg: "Water is rising or the AI sees something in the drain." },
+    DANGER:       { color: "var(--red)",    icon: "🚨", title: "Danger",           msg: "High water or a blocked drain. Check it now!" },
+    SENSOR_ERROR: { color: "var(--gray)",   icon: "🔌", title: "Sensor problem",   msg: "The ultrasonic sensor is not returning a reading." },
+    UNKNOWN:      { color: "var(--gray)",   icon: "⏳", title: "Waiting for device", msg: "Power on the ESP32 and it will appear here." },
   };
-  let lastFrameAt = 0;
-  let lastAiCheckedAt = 0;
+  const OUTPUTS = {
+    NORMAL:       { led: ["Off", ""],             buzzer: ["Silent", ""] },
+    WARNING:      { led: ["Blinking", "blink"],   buzzer: ["Silent", ""] },
+    DANGER:       { led: ["On", "on"],            buzzer: ["Beeping", "on"] },
+    SENSOR_ERROR: { led: ["Fast blink", "blink fast"], buzzer: ["Silent", ""] },
+  };
+  let lastFrameAt = 0, lastAiCheckedAt = 0;
 
-  const cm = (v) => (v === null || v === undefined ? "-" : v.toFixed(1) + " cm");
-  const ago = (s) => (s === null || s === undefined ? "never" : s < 2 ? "just now" : s + " s ago");
+  const cm = (v) => (v === null || v === undefined || v < 0 ? "-" : v.toFixed(1) + " cm");
+  const ago = (s) => (s === null || s === undefined ? "never" : s < 2 ? "just now" : s < 120 ? s + " s ago" : Math.round(s / 60) + " min ago");
 
   function loadImage(img, url, onShow) {
     const next = new Image();
@@ -130,73 +256,98 @@
 
   async function update() {
     let d;
-    try {
-      d = await (await fetch("/api/status")).json();
-    } catch {
-      $("devicePill").textContent = "Server unreachable";
-      $("devicePill").className = "pill offline";
+    try { d = await (await fetch("/api/status")).json(); }
+    catch {
+      $("deviceText").textContent = "Server unreachable";
+      $("devicePill").className = "pill";
       return;
     }
     const dev = d.device, ai = d.ai;
+    const state = dev.online ? dev.state : (dev.lastSeen ? "UNKNOWN" : "UNKNOWN");
 
-    // Device online/offline
-    $("devicePill").textContent = dev.online ? "Device online" : "Device offline";
-    $("devicePill").className = "pill " + (dev.online ? "online" : "offline");
+    // header pill
+    $("deviceText").textContent = dev.online ? "Device online" : "Device offline";
+    $("devicePill").className = "pill" + (dev.online ? " on" : "");
 
-    // Camera
+    // hero banner
+    const h = dev.online ? (HERO[dev.state] || HERO.UNKNOWN) : HERO.UNKNOWN;
+    document.documentElement.style.setProperty("--accent", h.color);
+    $("heroIcon").textContent = dev.online ? h.icon : "📴";
+    $("heroTitle").textContent = dev.online ? h.title : (dev.lastSeen ? "Device offline" : h.title);
+    $("heroMsg").textContent = dev.online ? h.msg : (dev.lastSeen ? "No data for " + ago(dev.lastSeenAgo).replace(" ago", "") + ". Check the ESP32 power and WiFi." : h.msg);
+    $("heroWater").textContent = dev.online ? cm(dev.water) : "-";
+
+    // camera
     if (d.frameAt && d.frameAt !== lastFrameAt) {
       lastFrameAt = d.frameAt;
       loadImage($("cam"), "/api/frame.jpg?t=" + d.frameAt, () => ($("camEmpty").style.display = "none"));
     }
-    $("camInfo").textContent = d.frameAt
-      ? "Photo updated " + new Date(d.frameAt).toLocaleTimeString()
-      : "No photo yet";
+    $("camLive").style.display = dev.online && d.frameAt ? "block" : "none";
+    const tag = $("camTag");
+    if (d.frameAt && ai.result !== "UNKNOWN") {
+      tag.style.display = "block";
+      tag.textContent = (ai.result === "BLOCKED" ? "🔴 " : "🟢 ") + ai.result;
+    } else tag.style.display = "none";
+    $("camInfo").textContent = d.frameAt ? "Photo updated " + new Date(d.frameAt).toLocaleTimeString() : "No photo yet";
 
-    // AI
-    const badge = $("badge");
-    if (ai.checking) { badge.className = "badge CHECKING"; badge.textContent = "ANALYZING..."; }
-    else { badge.className = "badge " + ai.result; badge.textContent = ai.result === "UNKNOWN" ? "NO RESULT" : ai.result; }
-    $("objects").textContent = ai.objects || "-";
+    // AI verdict
+    const v = $("verdict");
+    if (ai.checking) { v.className = "verdict v-CHECKING"; v.textContent = "ANALYZING..."; }
+    else { v.className = "verdict v-" + ai.result; v.textContent = ai.result === "UNKNOWN" ? "NO RESULT" : ai.result; }
+    const chips = $("chips");
+    chips.replaceChildren();
+    const objs = (ai.objects || "").split(",").map((s) => s.trim()).filter((s) => s && s.toLowerCase() !== "none");
+    if (objs.length) for (const o of objs) { const c = document.createElement("span"); c.className = "chip"; c.textContent = o; chips.appendChild(c); }
+    else if (ai.result === "CLEAR") { const c = document.createElement("span"); c.className = "chip"; c.textContent = "Nothing in the drain"; chips.appendChild(c); }
     $("lastCheck").textContent = ago(ai.checkedAgo);
     $("aiMs").textContent = ai.ms ? (ai.ms / 1000).toFixed(1) + " s" : "-";
     $("aiError").textContent = !ai.enabled ? "AI is disabled: no API key on the server." : ai.error || "";
     $("checkBtn").disabled = ai.checking || !ai.enabled;
+    $("checkBtn").textContent = ai.checking ? "Analyzing..." : "Check drain now";
     if (ai.hasPhoto && ai.checkedAt !== lastAiCheckedAt && !ai.checking) {
       lastAiCheckedAt = ai.checkedAt;
-      loadImage($("aiThumb"), "/api/ai-frame.jpg?t=" + ai.checkedAt, () => ($("aiThumbLabel").style.display = "block"));
+      loadImage($("aiThumb"), "/api/ai-frame.jpg?t=" + ai.checkedAt, () => ($("thumbWrap").style.display = "block"));
     }
 
-    // Sensors
-    $("water").textContent = cm(dev.water);
-    $("distance").textContent = dev.sensorOk ? cm(dev.distance) : "-";
-    $("sensorOk").textContent = dev.lastSeen ? (dev.sensorOk ? "OK" : "No echo / error") : "-";
-    $("sensorOk").className = dev.sensorOk ? "st-NORMAL" : "st-DANGER";
-    $("state").textContent = dev.state;
-    $("state").className = "st-" + dev.state;
-    const out = OUTPUTS[dev.state] || { led: "-", buzzer: "-" };
-    $("led").textContent = out.led;
-    $("buzzer").textContent = out.buzzer;
-    $("lastSeen").textContent = dev.lastSeen ? ago(dev.lastSeenAgo) : "never";
-
+    // water tank
     const depth = dev.depth || 1;
-    $("fill").style.width = Math.min(100, Math.max(0, ((dev.water || 0) / depth) * 100)) + "%";
-    $("warnMark").style.left = dev.warn ? Math.min(100, (dev.warn / depth) * 100) + "%" : "-10%";
-    $("dangerMark").style.left = dev.danger ? Math.min(100, (dev.danger / depth) * 100) + "%" : "-10%";
+    const pct = Math.min(100, Math.max(0, ((dev.water || 0) / depth) * 100));
+    $("water").style.height = pct + "%";
+    $("warnMark").style.bottom = dev.warn ? Math.min(100, (dev.warn / depth) * 100) + "%" : "-10%";
+    $("dangerMark").style.bottom = dev.danger ? Math.min(100, (dev.danger / depth) * 100) + "%" : "-10%";
+    $("waterNum").textContent = dev.water === null ? "-" : dev.water.toFixed(1);
+    $("waterPct").textContent = dev.water === null ? "No data yet" : Math.round(pct) + "% of drain depth (" + depth.toFixed(0) + " cm)";
+    $("waterLimits").textContent = dev.warn ? "Warning at " + dev.warn.toFixed(0) + " cm · Danger at " + dev.danger.toFixed(0) + " cm" : "-";
 
-    // History table
+    // sensor tiles
+    $("distance").textContent = dev.sensorOk ? cm(dev.distance) : "-";
+    const so = $("sensorOk");
+    so.textContent = dev.lastSeen ? (dev.sensorOk ? "Working" : "No echo") : "-";
+    so.className = "v " + (dev.sensorOk ? "good" : dev.lastSeen ? "bad" : "dim");
+    const st = $("state");
+    st.textContent = dev.online ? dev.state.replace("_", " ") : "-";
+    st.className = "v " + ({ NORMAL: "good", WARNING: "warn", DANGER: "bad" }[dev.state] || "dim");
+    $("lastSeen").textContent = dev.lastSeen ? ago(dev.lastSeenAgo) : "never";
+    const out = (dev.online && OUTPUTS[dev.state]) || { led: ["-", ""], buzzer: ["-", ""] };
+    $("ledText").textContent = out.led[0]; $("ledDot").className = "led " + out.led[1];
+    $("buzText").textContent = out.buzzer[0]; $("buzDot").className = "led " + out.buzzer[1];
+
+    // history
     const body = $("historyBody");
     body.replaceChildren();
     if (!d.history.length) {
-      const tr = body.insertRow();
-      const td = tr.insertCell(); td.colSpan = 5; td.textContent = "No readings yet";
+      const td = body.insertRow().insertCell(); td.colSpan = 5; td.className = "dim"; td.textContent = "No readings yet";
     }
-    for (const h of d.history.slice(0, 10)) {
+    for (const r of d.history.slice(0, 10)) {
       const tr = body.insertRow();
-      tr.insertCell().textContent = new Date(h.t).toLocaleTimeString();
-      tr.insertCell().textContent = cm(h.water);
-      tr.insertCell().textContent = h.distance !== null && h.distance >= 0 ? cm(h.distance) : "-";
-      const st = tr.insertCell(); st.textContent = h.state; st.className = "st-" + h.state;
-      const a = tr.insertCell(); a.textContent = h.ai; a.className = "ai-" + h.ai;
+      tr.insertCell().textContent = new Date(r.t).toLocaleTimeString();
+      tr.insertCell().textContent = cm(r.water);
+      tr.insertCell().textContent = cm(r.distance);
+      for (const val of [r.state, r.ai]) {
+        const b = document.createElement("span");
+        b.className = "badge b-" + val; b.textContent = val.replace("_", " ");
+        tr.insertCell().appendChild(b);
+      }
     }
   }
 
