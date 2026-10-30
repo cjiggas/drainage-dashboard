@@ -45,6 +45,7 @@ const device = {
   danger: null,
   state: "UNKNOWN",
   sensorOk: false,
+  ip: null,   // the board's address on its WiFi (for the local live-video stream)
 };
 let frame = null;     // latest camera photo (JPEG buffer)
 let frameAt = 0;
@@ -158,6 +159,7 @@ app.post("/api/device", express.raw({ type: "image/jpeg", limit: "3mb" }), (req,
   device.danger = num(req.query.danger);
   device.state = STATES.includes(req.query.state) ? req.query.state : "UNKNOWN";
   device.sensorOk = req.query.sensorOk === "1";
+  device.ip = /^\d{1,3}(\.\d{1,3}){3}$/.test(String(req.query.ip)) ? String(req.query.ip) : null;
 
   if (Buffer.isBuffer(req.body) && req.body.length > 0) {
     frame = req.body;
@@ -191,9 +193,14 @@ app.get("/api/status", (req, res) => {
   });
 });
 
+// The page asks for the photo several times per second. If nothing new arrived (same ETag),
+// answer 304 with no body, so polling fast costs almost no bandwidth.
 app.get("/api/frame.jpg", (req, res) => {
   if (!frame) return res.status(404).end();
-  res.set("Cache-Control", "no-store").type("image/jpeg").send(frame);
+  const etag = `"${frameAt}"`;
+  res.set("Cache-Control", "no-cache").set("ETag", etag);
+  if (req.get("if-none-match") === etag) return res.status(304).end();
+  res.type("image/jpeg").send(frame);
 });
 
 app.get("/api/ai-frame.jpg", (req, res) => {
@@ -214,7 +221,7 @@ app.post("/api/check", (req, res) => {
   res.json({ started: true });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`Drainage dashboard running.`);
   console.log(`  On this computer:  http://localhost:${PORT}`);
   for (const addrs of Object.values(os.networkInterfaces())) {
@@ -225,3 +232,7 @@ app.listen(PORT, "0.0.0.0", () => {
     }
   }
 });
+
+// Keep connections open longer than the ESP32's upload interval so it can reuse them
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;

@@ -85,3 +85,17 @@ Each AI check costs a fraction of a cent, but automatic checks add up if the dev
 | "AI is disabled" on the page | `ANTHROPIC_API_KEY` is missing on the server |
 | "Invalid API key" | Wrong key, or no credit in the Claude Console |
 | Camera shows nothing | `Camera init FAILED` in the Serial Monitor means the camera pins don't match your board |
+
+## Faster live camera
+
+| Where you watch | What you get |
+|---|---|
+| Deployed site (Render) | Photos about 2-4 times per second. The ESP32 keeps one connection open and sends small 400x296 photos every 0.5 s; the page asks for a new photo 4 times per second. The photos/s figure is shown under the camera. |
+| Same WiFi as the ESP32 | Smooth live video (10-20 fps). Click **Live view** on the camera card. On the local dashboard (`http://...`) the video plays inside the page; on the deployed `https://` site it opens in a new tab, because browsers block embedding `http` video in an `https` page. |
+
+You can also open the stream directly: `http://<ESP32-IP>:81/stream` (the IP is printed in the Serial Monitor).
+
+Tuning in `esp32/drainage_device/drainage_device.ino`:
+- `UPLOAD_INTERVAL_MS` (500): raise to 1000 on a weak signal.
+- `FRAMESIZE_CIF` / `jpeg_quality 15`: use `FRAMESIZE_VGA` and `12` for sharper photos (slower), or `FRAMESIZE_QVGA` for faster.
+- Deploying the server in Render's **Singapore** region (chosen when creating the service) cuts delay if you are in the Philippines.

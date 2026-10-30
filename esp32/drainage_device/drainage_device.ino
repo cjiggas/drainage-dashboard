@@ -1,21 +1,23 @@
 // Drainage Prototype - ESP32-S3 device for the web dashboard
 // ESP32-S3 CAM | HC-SR04 (TRIG 21, ECHO 14) | LED 2 | Buzzer 1
 //
-// Reads the water level, drives the LED/buzzer, and every second sends the
-// sensor readings + a camera photo to the dashboard server (/api/device).
+// Reads the water level, drives the LED/buzzer, and sends the sensor readings +
+// a camera photo to the dashboard server (/api/device) a few times per second.
 // The server runs the AI check and replies with CLEAR / BLOCKED.
+// It also serves a smooth live video stream on this WiFi: http://<board-ip>:81/stream
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "esp_camera.h"
+#include "esp_http_server.h"
 
 // WiFi name/password, SERVER_URL and DEVICE_KEY live in secrets.h (not uploaded to GitHub).
 // First time: copy secrets.example.h to secrets.h and fill it in.
 #include "secrets.h"
 
-const unsigned long UPLOAD_INTERVAL_MS = 1000;   // use 2000 when deployed online
+const unsigned long UPLOAD_INTERVAL_MS = 500;   // photos sent to the server (try 1000 on a weak signal)
 
 // ---------- Pins ----------
 const int TRIG_PIN   = 21;
@@ -78,6 +80,7 @@ void setup() {
 
   setupCamera();
   connectWiFi();
+  if (WiFi.status() == WL_CONNECTED) startStreamServer();
 
   // Network work runs on core 0 so the sensor + alarm on core 1 never freeze
   xTaskCreatePinnedToCore(networkTask, "network", 20480, NULL, 1, NULL, 0);
@@ -118,8 +121,8 @@ void setupCamera() {
   config.pin_reset    = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size   = FRAMESIZE_VGA;      // 640x480
-  config.jpeg_quality = 12;
+  config.frame_size   = FRAMESIZE_CIF;      // 400x296: small photos upload fast (VGA = 640x480 is sharper but slower)
+  config.jpeg_quality = 15;                 // higher number = smaller file
   config.fb_count     = 2;
   config.fb_location  = CAMERA_FB_IN_PSRAM;
   config.grab_mode    = CAMERA_GRAB_LATEST;
@@ -149,34 +152,38 @@ void networkTask(void* param) {
   int failures = 0;
   bool secure = String(SERVER_URL).startsWith("https");
 
+  // Created ONCE and kept open: the slow secure handshake only happens on (re)connect,
+  // not for every photo. This is the biggest speed-up for the online dashboard.
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();   // skips certificate check - fine for a prototype
+  HTTPClient http;
+  http.setReuse(true);
+  http.setTimeout(15000);
+
   while (true) {
     unsigned long started = millis();
 
     if (WiFi.status() != WL_CONNECTED) {
       serverOk = false;
+      secureClient.stop();
+      plainClient.stop();
       WiFi.reconnect();
       vTaskDelay(pdMS_TO_TICKS(3000));
       continue;
     }
 
-    char url[256];
+    char url[300];
     snprintf(url, sizeof(url),
-             "%s/api/device?distance=%.1f&water=%.1f&depth=%.1f&warn=%.1f&danger=%.1f&state=%s&sensorOk=%d",
+             "%s/api/device?distance=%.1f&water=%.1f&depth=%.1f&warn=%.1f&danger=%.1f&state=%s&sensorOk=%d&ip=%s",
              SERVER_URL, distanceCm, waterLevel, SENSOR_TO_BOTTOM_CM, WARNING_LEVEL_CM,
-             DANGER_LEVEL_CM, STATE_NAMES[state], state == SENSOR_ERROR ? 0 : 1);
+             DANGER_LEVEL_CM, STATE_NAMES[state], state == SENSOR_ERROR ? 0 : 1,
+             WiFi.localIP().toString().c_str());
 
     camera_fb_t* fb = esp_camera_fb_get();
 
-    WiFiClient plainClient;
-    WiFiClientSecure secureClient;
-    HTTPClient http;
-    http.setTimeout(15000);
-    if (secure) {
-      secureClient.setInsecure();   // skips certificate check - fine for a prototype
-      http.begin(secureClient, url);
-    } else {
-      http.begin(plainClient, url);
-    }
+    if (secure) http.begin(secureClient, url);
+    else        http.begin(plainClient, url);
     http.addHeader("content-type", "image/jpeg");
     http.addHeader("x-device-key", DEVICE_KEY);
 
@@ -198,11 +205,52 @@ void networkTask(void* param) {
                     code == 401 ? "(DEVICE_KEY does not match the server)" : "");
       serverOk = false;
       if (++failures >= 3) aiResult = AI_UNKNOWN;   // don't trust an old AI result
+      secureClient.stop();                          // drop a possibly dead connection, reconnect next time
+      plainClient.stop();
     }
     http.end();
 
     unsigned long spent = millis() - started;
     if (spent < UPLOAD_INTERVAL_MS) vTaskDelay(pdMS_TO_TICKS(UPLOAD_INTERVAL_MS - spent));
+  }
+}
+
+// ---------------- Live video stream (same WiFi only) ----------------
+// Open http://<board-ip>:81/stream in a browser on the same WiFi. The dashboard shows a
+// "Live view" button for it. This is smooth video; the online dashboard shows photos.
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char* STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char* STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
+static const char* STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
+
+static esp_err_t streamHandler(httpd_req_t* req) {
+  esp_err_t res = httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
+  if (res != ESP_OK) return res;
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  char part[64];
+  while (true) {
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (!fb) return ESP_FAIL;
+    size_t hlen = snprintf(part, sizeof(part), STREAM_PART, (unsigned)fb->len);
+    res = httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY));
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, part, hlen);
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len);
+    esp_camera_fb_return(fb);
+    if (res != ESP_OK) break;            // viewer closed the page
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+  return res;
+}
+
+void startStreamServer() {
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.server_port = 81;
+  config.stack_size  = 8192;
+  httpd_uri_t streamUri = { .uri = "/stream", .method = HTTP_GET, .handler = streamHandler, .user_ctx = NULL };
+  httpd_handle_t server = NULL;
+  if (httpd_start(&server, &config) == ESP_OK) {
+    httpd_register_uri_handler(server, &streamUri);
+    Serial.printf("Live video on this WiFi: http://%s:81/stream\n", WiFi.localIP().toString().c_str());
   }
 }
 

@@ -57,6 +57,7 @@
   /* camera */
   .cam { position: relative; background: #000; border-radius: 12px; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--line); }
   .cam img { width: 100%; height: 100%; object-fit: cover; display: none; }
+  .livebtn { width: auto; margin: 0 0 0 auto; padding: 6px 12px; font-size: 12px; border-radius: 8px; display: none; text-transform: none; letter-spacing: 0; }
   .cam .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: var(--muted); }
   .cam .tag { position: absolute; top: 12px; left: 12px; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 13px; background: #000a; backdrop-filter: blur(4px); display: none; }
   .cam .live { position: absolute; top: 12px; right: 12px; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #000a; display: none; }
@@ -149,9 +150,10 @@
 
     <!-- camera -->
     <div class="card c-cam">
-      <h3>📷 Camera</h3>
+      <h3>📷 Camera <button id="liveBtn" class="livebtn" onclick="toggleLive()">Live view</button></h3>
       <div class="cam">
         <img id="cam" alt="Latest camera photo">
+        <img id="camStream" alt="Live video">
         <div id="camEmpty" class="empty">Waiting for the first photo from the ESP32...</div>
         <div id="camTag" class="tag"></div>
         <div id="camLive" class="live"><i></i>LIVE</div>
@@ -234,7 +236,55 @@
     DANGER:       { led: ["On", "on"],            buzzer: ["Beeping", "on"] },
     SENSOR_ERROR: { led: ["Fast blink", "blink fast"], buzzer: ["Silent", ""] },
   };
-  let lastFrameAt = 0, lastAiCheckedAt = 0;
+  let lastAiCheckedAt = 0;
+  let frameEtag = null, frameBusy = false, blobUrl = null, frameTimes = [], lastFrameAt = 0;
+  let streamOn = false, deviceIp = null, streamErrAt = 0;
+
+  // Photos: asked for 4x per second. The server answers "304 not modified" (no data) until a new photo arrives.
+  async function refreshFrame() {
+    if (frameBusy || streamOn) return;
+    frameBusy = true;
+    try {
+      const res = await fetch("/api/frame.jpg", { headers: frameEtag ? { "If-None-Match": frameEtag } : {}, cache: "no-store" });
+      if (res.status === 200) {
+        frameEtag = res.headers.get("ETag");
+        const url = URL.createObjectURL(await res.blob());
+        const img = $("cam");
+        img.src = url;
+        img.style.display = "block";
+        $("camEmpty").style.display = "none";
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        blobUrl = url;
+        lastFrameAt = Date.now();
+        frameTimes.push(lastFrameAt);
+        while (frameTimes.length > 2 && lastFrameAt - frameTimes[0] > 8000) frameTimes.shift();
+      }
+    } catch {}
+    frameBusy = false;
+  }
+  function fpsText() {
+    if (frameTimes.length < 3) return "";
+    const fps = ((frameTimes.length - 1) * 1000) / (frameTimes[frameTimes.length - 1] - frameTimes[0]);
+    return " · " + fps.toFixed(1) + " photos/s";
+  }
+
+  // Live view = smooth video straight from the ESP32. Only works on the same WiFi.
+  function toggleLive() {
+    if (!deviceIp) return;
+    const url = "http://" + deviceIp + ":81/stream";
+    if (location.protocol !== "http:") { window.open(url, "_blank"); return; }   // https pages can't embed http video
+    streamOn = !streamOn;
+    const s = $("camStream");
+    s.onerror = () => {
+      streamOn = false; s.style.display = "none"; s.removeAttribute("src");
+      if (lastFrameAt) $("cam").style.display = "block";
+      $("liveBtn").textContent = "Live view";
+      streamErrAt = Date.now();
+    };
+    if (streamOn) { s.src = url; s.style.display = "block"; $("cam").style.display = "none"; $("camEmpty").style.display = "none"; }
+    else { s.removeAttribute("src"); s.style.display = "none"; if (lastFrameAt) $("cam").style.display = "block"; }
+    $("liveBtn").textContent = streamOn ? "Back to photos" : "Live view";
+  }
 
   const cm = (v) => (v === null || v === undefined || v < 0 ? "-" : v.toFixed(1) + " cm");
   const ago = (s) => (s === null || s === undefined ? "never" : s < 2 ? "just now" : s < 120 ? s + " s ago" : Math.round(s / 60) + " min ago");
@@ -277,18 +327,21 @@
     $("heroMsg").textContent = dev.online ? h.msg : (dev.lastSeen ? "No data for " + ago(dev.lastSeenAgo).replace(" ago", "") + ". Check the ESP32 power and WiFi." : h.msg);
     $("heroWater").textContent = dev.online ? cm(dev.water) : "-";
 
-    // camera
-    if (d.frameAt && d.frameAt !== lastFrameAt) {
-      lastFrameAt = d.frameAt;
-      loadImage($("cam"), "/api/frame.jpg?t=" + d.frameAt, () => ($("camEmpty").style.display = "none"));
-    }
+    // camera (the photo itself is fetched by refreshFrame(); this part handles labels and the Live view button)
+    deviceIp = dev.online ? dev.ip : null;
+    const lb = $("liveBtn");
+    lb.style.display = deviceIp ? "inline-block" : "none";
+    if (!deviceIp && streamOn) toggleLive();
+    if (location.protocol !== "http:" && deviceIp) lb.textContent = "Live view (same WiFi)";
     $("camLive").style.display = dev.online && d.frameAt ? "block" : "none";
     const tag = $("camTag");
     if (d.frameAt && ai.result !== "UNKNOWN") {
       tag.style.display = "block";
       tag.textContent = (ai.result === "BLOCKED" ? "🔴 " : "🟢 ") + ai.result;
     } else tag.style.display = "none";
-    $("camInfo").textContent = d.frameAt ? "Photo updated " + new Date(d.frameAt).toLocaleTimeString() : "No photo yet";
+    $("camInfo").textContent = Date.now() - streamErrAt < 8000 ? "Can't reach the live stream. Is this device on the same WiFi as the ESP32?"
+      : streamOn ? "Live video from the ESP32 (same WiFi)"
+      : d.frameAt ? "Photo updated " + new Date(d.frameAt).toLocaleTimeString() + fpsText() : "No photo yet";
 
     // AI verdict
     const v = $("verdict");
@@ -352,7 +405,9 @@
   }
 
   setInterval(update, 1000);
+  setInterval(refreshFrame, 250);
   update();
+  refreshFrame();
 </script>
 </body>
 </html>
